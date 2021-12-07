@@ -1,7 +1,7 @@
 classdef BayesoptOptions_custom
     %
 
-    %   Copyright 2016-2020 The MathWorks, Inc.
+    %   Copyright 2016-2021 The MathWorks, Inc.
 
     properties
         % Properties that can be set using bayesopt name/value pairs. Any
@@ -105,6 +105,17 @@ classdef BayesoptOptions_custom
         
         % boolean set to true if bayesopt is called from 'fitcauto'.
         FitcAutoSingleLearner = false;
+        
+        % bayesopt custom print object.
+        BayesOptPrint = [];
+
+        % ASHA parameters. These must all be set by NVPs passed to the
+        % constructor. If any are nonempty, they are all checked for
+        % consistency here.
+        MinTrainingSetSize = [];
+        MaxTrainingSetSize = [];
+        NumTrainingSetSizes = [];
+        TrainingSetSizeMultiplier = [];
     end
     
     properties(Hidden, Dependent)
@@ -129,7 +140,9 @@ classdef BayesoptOptions_custom
             % Parse all user-visible public properties of BayesoptOptions_custom,
             % plus these hidden properties: FitModels, NumGridDivisions,
             % AlwaysReportObjectiveErrors, IsClassregRegressionFunction.
-            Names = [properties(this); {'FitModels'; 'NumGridDivisions'; 'AlwaysReportObjectiveErrors'; 'IsClassregRegressionFunction'; 'ModelType';'FitcautoMultipleLearners';'FitcAutoSingleLearner'}];
+            Names = [properties(this); {'FitModels'; 'NumGridDivisions'; 'AlwaysReportObjectiveErrors'; 
+                'IsClassregRegressionFunction'; 'ModelType';'FitcautoMultipleLearners';'FitcAutoSingleLearner';'BayesOptPrint';
+                'MinTrainingSetSize'; 'MaxTrainingSetSize'; 'TrainingSetSizeMultiplier'; 'NumTrainingSetSizes'}];
             [Vals{1:numel(Names)}, setflags, RemainingNVPs] = internal.stats.parseArgs(Names, repmat({[]},numel(Names),1), RemainingNVPs{:});
             for i = 1:numel(Names)
                 if setflags.(Names{i})
@@ -167,7 +180,7 @@ classdef BayesoptOptions_custom
             this = fillPlotParams(this);
             this = checkAndFillPlotFcn(this);
             checkOutputFcn(this);
-            this = checkAndFillInitializationData(this);
+            this = checkAndFillInitializationData(this);            
         end
         
         % Setters and getters
@@ -272,7 +285,7 @@ classdef BayesoptOptions_custom
                 {'expectedimprovement', 'expectedimprovementpersecond',...
                 'lowerconfidencebound', 'probabilityofimprovement',...
                 'expectedimprovementplus', 'expectedimprovementpersecondplus',...
-                'grid', 'random'});
+                'grid', 'random', 'asha'});
             if isempty(RepairedValue)
                 bayesoptim.err('AFName', this.AcquisitionFunctionName);
             else
@@ -497,9 +510,11 @@ classdef BayesoptOptions_custom
                             bayesoptim.err('InitialXInts', i);
                         end
                     end
-                    % Verify passed log vars are positive
-                    if this.VarSpec.isLog(i) && ~all(X > 0)
-                        bayesoptim.err('InitialXLogs', i);
+                    % Verify passed log vars
+                    if this.VarSpec.isLog(i) && this.VarSpec.isReal(i) && ~all(X > 0)
+                        bayesoptim.err('InitialRealXLogs', i);
+                    elseif this.VarSpec.isLog(i) && this.VarSpec.isInt(i) && ~all(X >= 0)
+                        bayesoptim.err('InitialIntXLogs', i);
                     end
                     % All checks passed. Convert to double
                     this.InitialX.(i) = double(this.InitialX.(i));
@@ -661,7 +676,7 @@ classdef BayesoptOptions_custom
         end
         
         function checkFitModels(this)
-            if ~this.FitModels && ~ismember(this.AcquisitionFunctionName, {'grid','random'})
+            if ~this.FitModels && ~ismember(this.AcquisitionFunctionName, {'grid','random','asha'})
                 bayesoptim.err('FitModels');
             end
         end
@@ -676,8 +691,7 @@ classdef BayesoptOptions_custom
             if ~bayesoptim.isLogicalScalar(this.IsClassregRegressionFunction)
                 bayesoptim.err('IsClassregRegressionFunction');
             end
-        end
-        
+        end   
     end
     
     methods(Static)
